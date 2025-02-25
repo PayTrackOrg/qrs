@@ -2,6 +2,10 @@ import qrcode
 from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
 
+nombre="Licoexpress la 45"
+idDisco="licoexpressla45"
+mesas=0
+
 # Función para generar el código QR con logo y texto debajo
 def generate_qr_with_logo_and_text(link, logo_path, title, output_path):
     # Crear el código QR
@@ -51,21 +55,21 @@ def generate_qr_with_logo_and_text(link, logo_path, title, output_path):
 
 # Lista de links y otros datos
 links = [
-    "https://users.pay-track.app/?idDisco=Licoexpressla70"
+    f"https://users.pay-track.app/?idDisco={idDisco}"
 ]
-for i in range(1,87,1):
-    links.append(f"https://users.pay-track.app/?idDisco=Licoexpressla70&table={i}")
+for i in range(1,mesas+1,1):
+    links.append(f"https://users.pay-track.app/?idDisco={idDisco}&table={i}")
 logo_path = "./icono.png"  # Ruta del logo
 output_folder = "./images/"  # Carpeta de salida
 
 # Generar un QR para cada link
 for i, link in enumerate(links):
     if i != 0:
-        title = f"Lico express la 70 - Mesa {i}"
+        title = f"{nombre} - Mesa {i}"
         output_path = f"{output_folder}mesa-{i}.png"
         generate_qr_with_logo_and_text(link, logo_path, title, output_path)
     else:
-        title = f"Lico express la 70"
+        title = f"{nombre}"
         output_path = f"{output_folder}general.png"
         generate_qr_with_logo_and_text(link, logo_path, title, output_path)
 
