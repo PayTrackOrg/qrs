@@ -11,8 +11,8 @@ def generate_qr_with_logo_and_text(link, background_path, title, output_path):
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_H,
-        box_size=9,
-        border=4,
+        box_size=10,
+        border=2,
     )
     qr.add_data(link)
     qr.make(fit=True)
@@ -29,7 +29,7 @@ def generate_qr_with_logo_and_text(link, background_path, title, output_path):
     # 3. Cargar la fuente y medir el tamaño del texto
     font_path = "BreathingRegular.ttf"
     try:
-        font = ImageFont.truetype(font=font_path, size=50)
+        font = ImageFont.truetype(font=font_path, size=65)
     except IOError:
         print(f"Advertencia: No se pudo cargar la fuente '{font_path}'. Usando la fuente predeterminada.")
         font = ImageFont.load_default()
@@ -42,7 +42,7 @@ def generate_qr_with_logo_and_text(link, background_path, title, output_path):
     qr_width, qr_height = qr_img.size
     bg_width, bg_height = final_img.size
     
-    spacing = 60
+    spacing = 30
 
     total_content_width = qr_width + spacing + text_width
     
@@ -52,7 +52,7 @@ def generate_qr_with_logo_and_text(link, background_path, title, output_path):
     # --- ✨ LÍNEA NUEVA PARA EL AJUSTE MANUAL ✨ ---
     # Restamos un valor para mover todo el bloque hacia la izquierda.
     # ¡Puedes cambiar este número hasta que quede perfecto!
-    manual_offset = -180
+    manual_offset = -190
     start_x = start_x_calculado - manual_offset
     
     # Coordenadas para el QR (centrado verticalmente)
