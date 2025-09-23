@@ -3,8 +3,8 @@ from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
 
 nombre="General"
-idDisco="licoexpressla45"
-mesas=15 # Cambia este número para generar QR para mesas, ej: mesas=10
+idDisco="ternadiscoteca"
+mesas=20 # Cambia este número para generar QR para mesas, ej: mesas=10
 
 def generate_qr_with_logo_and_text(link, background_path, title, output_path):
     # 1. Crear el objeto QR (sin cambios aquí)
