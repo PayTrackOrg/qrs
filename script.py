@@ -1,10 +1,33 @@
+import base64
+import json
+import os
 import qrcode
 from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
+from urllib.parse import urlencode
 
-nombre="Bambora Club 3"
-idDisco="bamboraclub3"
-mesas=20 # Cambia este número para generar QR para mesas, ej: mesas=10
+nombre="PayTrack"
+idDisco="paytrack"
+mesas=3 # Cambia este número para generar QR para mesas, ej: mesas=10
+base_url="https://users.paytrack.com.co/"
+
+def build_access_link(base_url, id_disco, table=None, message=None):
+    payload = {
+        "idDisco": id_disco,
+        "v": 1,
+    }
+
+    if table is not None and str(table).strip():
+        payload["table"] = str(table).strip()
+
+    if message is not None and str(message).strip():
+        payload["message"] = str(message).strip()
+
+    session = base64.urlsafe_b64encode(
+        json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    ).decode("utf-8")
+
+    return f"{base_url}?{urlencode({'session': session})}"
 
 def load_header_font(size):
     # Prioriza fuentes compactas y en negrita para parecerse al ejemplo.
@@ -287,15 +310,16 @@ def generate_qr_with_logo_and_text(link, background_path, title, output_path):
     # 7. Guardar la imagen final
     final_img.save(output_path)
 
-# Lista de links y otros datos
-links = [
-    f"https://users.paytrack.com.co/?idDisco={idDisco}"
-]
-for i in range(1, mesas + 1, 1):
-    links.append(f"https://users.paytrack.com.co/?idDisco={idDisco}&table={i}")
-
 logo_path = "./Background.png"  # Ruta del fondo
 output_folder = "./images/"     # Carpeta de salida
+os.makedirs(output_folder, exist_ok=True)
+
+# Lista de links y otros datos
+links = [
+    build_access_link(base_url, idDisco)
+]
+for i in range(1, mesas + 1, 1):
+    links.append(build_access_link(base_url, idDisco, table=i))
 
 # Generar un QR para cada link
 for i, link in enumerate(links):
