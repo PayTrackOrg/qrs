@@ -52,18 +52,70 @@ label, .field-label {
   color: var(--muted);
 }
 
-select, input[type="number"] {
+select, input[type="number"], input[type="text"] {
   background: #10132480;
   border: 1px solid var(--border);
   color: var(--text);
   padding: 10px 12px;
   border-radius: 8px;
   font-size: 15px;
+  width: 100%;
 }
 
 select:focus, input:focus {
   outline: 2px solid var(--cyan);
   outline-offset: 1px;
+}
+
+.combobox {
+  position: relative;
+}
+
+.combobox-options {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 6px;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  background: #12162a;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  z-index: 10;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+}
+
+.combobox-options li {
+  padding: 9px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text);
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.combobox-options li .id-disco {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.combobox-options li:hover,
+.combobox-options li.active {
+  background: #232a4a;
+}
+
+.combobox-options li.empty {
+  color: var(--muted);
+  cursor: default;
+}
+
+.combobox-options li.empty:hover {
+  background: transparent;
 }
 
 .radio-group {

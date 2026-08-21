@@ -11,28 +11,23 @@
       <header>
         <h1>Generador de códigos QR</h1>
         <p class="subtitle">
-          Ingresa el nombre y el ID de la discoteca, define el número de mesas y
-          genera los QR de acceso.
+          Busca la discoteca, define el número de mesas y genera los QR de
+          acceso.
         </p>
       </header>
 
       <form id="qr-form" class="panel">
         <div class="field">
-          <label for="nombre-input">Nombre de la discoteca</label>
-          <input
-            id="nombre-input"
-            type="text"
-            placeholder="Ej: PAYTRACK"
-            required />
-        </div>
-
-        <div class="field">
-          <label for="id-disco-input">ID de la discoteca (idDisco)</label>
-          <input
-            id="id-disco-input"
-            type="text"
-            placeholder="Ej: paytrack"
-            required />
+          <label for="disco-search">Discoteca</label>
+          <div class="combobox" id="disco-combobox">
+            <input
+              id="disco-search"
+              type="text"
+              placeholder="Busca por nombre o ID..."
+              autocomplete="off"
+              required />
+            <ul id="disco-options" class="combobox-options" hidden></ul>
+          </div>
         </div>
 
         <div class="field">
