@@ -6,9 +6,9 @@ from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
 from urllib.parse import urlencode
 
-nombre="PayTrack"
-idDisco="paytrack"
-mesas=3 # Cambia este número para generar QR para mesas, ej: mesas=10
+nombre="JUNGLA GASTROBAR"
+idDisco="junglagastrobar"
+mesas=12 # Cambia este número para generar QR para mesas, ej: mesas=10
 base_url="https://users.paytrack.com.co/"
 
 def build_access_link(base_url, id_disco, table=None, message=None):
@@ -311,8 +311,10 @@ def generate_qr_with_logo_and_text(link, background_path, title, output_path):
     final_img.save(output_path)
 
 logo_path = "./Background.png"  # Ruta del fondo
-output_folder = "./images/"     # Carpeta de salida
-os.makedirs(output_folder, exist_ok=True)
+output_folder_with_background = "./images/con-fondo"     # Carpeta de salida
+output_folder_without_background = "./images/sin-fondo"     # Carpeta de salida
+os.makedirs(output_folder_with_background, exist_ok=True)
+os.makedirs(output_folder_without_background, exist_ok=True)
 
 # Lista de links y otros datos
 links = [
@@ -325,8 +327,8 @@ for i in range(1, mesas + 1, 1):
 for i, link in enumerate(links):
     if i != 0:
         title = f"{i}"
-        output_path_with_bg = f"{output_folder}{idDisco}-mesa-{i}.png"
-        output_path_plain = f"{output_folder}{idDisco}-mesa-{i}-sin-fondo.png"
+        output_path_with_bg = f"{output_folder_with_background}/{idDisco}-mesa-{i}.png"
+        output_path_plain = f"{output_folder_without_background}/{idDisco}-mesa-{i}-sin-fondo.png"
 
         generate_qr_with_logo_and_text(link, logo_path, title, output_path_with_bg)
         generate_plain_qr(link, output_path_plain)
@@ -334,8 +336,8 @@ for i, link in enumerate(links):
         print(f"Mesa {i}: con fondo -> {output_path_with_bg} | sin fondo -> {output_path_plain}")
     else:
         title = f"{nombre}"
-        output_path_with_bg = f"{output_folder}{idDisco}-general.png"
-        output_path_plain = f"{output_folder}{idDisco}-general-sin-fondo.png"
+        output_path_with_bg = f"{output_folder_with_background}/{idDisco}-general.png"
+        output_path_plain = f"{output_folder_without_background}/{idDisco}-general-sin-fondo.png"
 
         generate_qr_with_logo_and_general(link, logo_path, title, output_path_with_bg)
         generate_plain_qr(link, output_path_plain)
