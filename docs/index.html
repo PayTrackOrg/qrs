@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Generador de QR - PayTrack</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <h1>Generador de códigos QR</h1>
+        <p class="subtitle">
+          Ingresa el nombre y el ID de la discoteca, define el número de mesas y
+          genera los QR de acceso.
+        </p>
+      </header>
+
+      <form id="qr-form" class="panel">
+        <div class="field">
+          <label for="nombre-input">Nombre de la discoteca</label>
+          <input
+            id="nombre-input"
+            type="text"
+            placeholder="Ej: PAYTRACK"
+            required />
+        </div>
+
+        <div class="field">
+          <label for="id-disco-input">ID de la discoteca (idDisco)</label>
+          <input
+            id="id-disco-input"
+            type="text"
+            placeholder="Ej: paytrack"
+            required />
+        </div>
+
+        <div class="field">
+          <label for="mesas-input">Número de mesas</label>
+          <input
+            id="mesas-input"
+            type="number"
+            min="1"
+            max="500"
+            step="1"
+            value="12"
+            required />
+        </div>
+
+        <div class="field">
+          <span class="field-label">Estilo de QR</span>
+          <div class="radio-group">
+            <label class="radio">
+              <input type="radio" name="estilo" value="sin-fondo" />
+              Sin fondo
+            </label>
+            <label class="radio">
+              <input type="radio" name="estilo" value="con-fondo" />
+              Con fondo
+            </label>
+            <label class="radio">
+              <input type="radio" name="estilo" value="ambos" checked />
+              Ambos
+            </label>
+          </div>
+        </div>
+
+        <button type="submit" id="generate-btn">Generar códigos QR</button>
+      </form>
+
+      <section id="status" class="status" hidden></section>
+
+      <section id="results" class="results" hidden>
+        <div class="results-header">
+          <h2>Resultados</h2>
+          <button type="button" id="download-zip-btn">
+            Descargar todo (.zip)
+          </button>
+        </div>
+        <div id="results-grid" class="results-grid"></div>
+      </section>
+    </div>
+
+    <!-- Fuente para el header del QR sin fondo (equivalente a Anton/Bebas/Impact del script.py) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Anton&display=swap"
+      rel="stylesheet" />
+
+    <style>
+      @font-face {
+        font-family: "BreathingRegular";
+        src: url("assets/BreathingRegular.ttf") format("truetype");
+        font-display: block;
+      }
+    </style>
+
+    <!-- JSZip para empaquetar las imágenes generadas (empaquetado localmente, sin CDN) -->
+    <script src="vendor/jszip.min.js"></script>
+
+    <!-- Librería de generación de QR (equivalente a "qrcode" de Python), empaquetada localmente -->
+    <script src="vendor/qrcode.min.js"></script>
+
+    <script src="assets/background-data.js"></script>
+    <script src="assets/fonts-data.js"></script>
+    <script src="qr-builder.js"></script>
+    <script src="main.js"></script>
+  </body>
+</html>
