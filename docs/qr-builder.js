@@ -70,13 +70,23 @@ function qrModulesToSvg(modules, originX, originY, fillColor = "#000000") {
   const sizePx = totalModules * QR_MODULE_SIZE;
 
   let markup = `<rect x="${originX}" y="${originY}" width="${sizePx}" height="${sizePx}" fill="#ffffff"/>`;
+  // Los módulos oscuros contiguos de una fila se fusionan en un solo <rect>
+  // en vez de uno por módulo: miles de rects individuales son lo que hace que
+  // Illustrator/Inkscape tarden en abrir o seleccionar el archivo.
   for (let row = 0; row < size; row++) {
-    for (let col = 0; col < size; col++) {
-      if (modules.get(row, col)) {
-        const x = originX + (QR_MARGIN_MODULES + col) * QR_MODULE_SIZE;
-        const y = originY + (QR_MARGIN_MODULES + row) * QR_MODULE_SIZE;
-        markup += `<rect x="${x}" y="${y}" width="${QR_MODULE_SIZE}" height="${QR_MODULE_SIZE}" fill="${fillColor}"/>`;
+    let col = 0;
+    while (col < size) {
+      if (!modules.get(row, col)) {
+        col++;
+        continue;
       }
+      const runStart = col;
+      while (col < size && modules.get(row, col)) col++;
+      const runLength = col - runStart;
+      const x = originX + (QR_MARGIN_MODULES + runStart) * QR_MODULE_SIZE;
+      const y = originY + (QR_MARGIN_MODULES + row) * QR_MODULE_SIZE;
+      const width = runLength * QR_MODULE_SIZE;
+      markup += `<rect x="${x}" y="${y}" width="${width}" height="${QR_MODULE_SIZE}" fill="${fillColor}"/>`;
     }
   }
   return { markup, sizePx };
@@ -230,55 +240,105 @@ async function buildQrOnBackgroundSvg(link, title, layoutFn) {
   return svgDocument(bgWidth, bgHeight, fontFaceCss, body);
 }
 
+// Zona segura dentro de Background.png (1080x1080) que evita el título superior,
+// el logo "Pay/Track" (ocupa aprox. x 0-222, y 458-612) y la barra/íconos del
+// reproductor (aprox. y 820-1046). Medida directamente sobre la imagen.
+const SAFE_TOP = 250;
+const SAFE_BOTTOM = 800;
+const SAFE_LEFT = 260;
+const SAFE_RIGHT_MARGIN = 40;
+
+const TEXT_FONT_FAMILY = "BreathingRegular, cursive";
+const TEXT_BASE_SIZE = 65;
+const TEXT_MIN_SIZE = 24;
+
+function fitFontSize(measureFn, baseSize, minSize) {
+  let size = baseSize;
+  let extent = measureFn(size);
+  while (extent.overflow > 0 && size > minSize) {
+    size -= 2;
+    extent = measureFn(size);
+  }
+  return { size, ...extent };
+}
+
+// Mantiene el QR dentro de la franja vertical segura (evita superponerse al
+// título arriba o a la barra del reproductor abajo), sin dejar de intentar
+// centrarlo verticalmente en el fondo cuando cabe.
+function clampQrY(qrSizePx, bgHeight) {
+  let qrY = (bgHeight - qrSizePx) / 2;
+  qrY = Math.min(qrY, SAFE_BOTTOM - qrSizePx);
+  qrY = Math.max(qrY, SAFE_TOP);
+  return qrY;
+}
+
 function generalTextLayout(font, qrSizePx, bgWidth, bgHeight, title) {
-  const metrics = measureText(title, font);
+  const spacing = 30;
+  const safeRight = bgWidth - SAFE_RIGHT_MARGIN;
+  const availableWidth = safeRight - SAFE_LEFT;
+  const maxTextWidth = Math.max(availableWidth - qrSizePx - spacing, 80);
+
+  const { size: fontSize, metrics } = fitFontSize((size) => {
+    const m = measureText(title, `${size}px ${TEXT_FONT_FAMILY}`);
+    return { metrics: m, overflow: m.width - maxTextWidth };
+  }, TEXT_BASE_SIZE, TEXT_MIN_SIZE);
+
   const textWidth = metrics.width;
-  const ascent = metrics.actualBoundingBoxAscent || 50;
-  const descent = metrics.actualBoundingBoxDescent || 15;
+  const ascent = metrics.actualBoundingBoxAscent || fontSize * 0.77;
+  const descent = metrics.actualBoundingBoxDescent || fontSize * 0.23;
   const textHeight = ascent + descent;
 
-  const spacing = 30;
   const totalContentWidth = qrSizePx + spacing + textWidth;
-  const startXCalculado = (bgWidth - totalContentWidth) / 3;
-  const manualOffset = -190;
-  const startX = startXCalculado - manualOffset;
+  const startX = Math.max(SAFE_LEFT + (availableWidth - totalContentWidth) / 2, SAFE_LEFT);
 
   const qrX = startX;
-  const qrY = (bgHeight - qrSizePx) / 2;
-  const textTopY = (bgHeight - textHeight) / 2;
+  const qrY = clampQrY(qrSizePx, bgHeight);
+  const qrCenterY = qrY + qrSizePx / 2;
+  const textBaselineY = qrCenterY - textHeight / 2 + ascent;
   const textX = startX + qrSizePx + spacing;
-  const textBaselineY = textTopY + ascent;
 
-  const textMarkup = `<text x="${textX}" y="${textBaselineY}" font-family="BreathingRegular, cursive" font-size="65" fill="#000000">${escapeXml(title)}</text>`;
+  const textMarkup = `<text x="${textX}" y="${textBaselineY}" font-family="${TEXT_FONT_FAMILY}" font-size="${fontSize}" fill="#000000">${escapeXml(title)}</text>`;
   return { qrX, qrY, textMarkup };
 }
 
 function mesaTextLayout(font, qrSizePx, bgWidth, bgHeight, title) {
-  const metrics = measureText(title, font);
-  const textWidth = metrics.width;
-  const ascent = metrics.actualBoundingBoxAscent || 50;
-  const descent = metrics.actualBoundingBoxDescent || 15;
+  const spacing = 30;
+  const mesaOffset = 10;
+  const numberOffset = 60;
+  const safeRight = bgWidth - SAFE_RIGHT_MARGIN;
+  const availableWidth = safeRight - SAFE_LEFT;
+  const maxTextWidth = Math.max(availableWidth - qrSizePx - spacing, 80);
+
+  const { size: fontSize, metrics, extent } = fitFontSize((size) => {
+    const mesaMetrics = measureText("Mesa", `${size}px ${TEXT_FONT_FAMILY}`);
+    const numberMetrics = measureText(title, `${size}px ${TEXT_FONT_FAMILY}`);
+    const extent = Math.max(mesaOffset + mesaMetrics.width, numberOffset + numberMetrics.width);
+    return { metrics: numberMetrics, extent, overflow: extent - maxTextWidth };
+  }, TEXT_BASE_SIZE, TEXT_MIN_SIZE);
+
+  const ascent = metrics.actualBoundingBoxAscent || fontSize * 0.77;
+  const descent = metrics.actualBoundingBoxDescent || fontSize * 0.23;
   const textHeight = ascent + descent;
 
-  const spacing = 30;
-  const totalContentWidth = qrSizePx + spacing + textWidth;
-  const startXCalculado = (bgWidth - totalContentWidth) / 3;
-  const manualOffset = -115;
-  const startX = startXCalculado - manualOffset;
+  const totalContentWidth = qrSizePx + spacing + extent;
+  const startX = Math.max(SAFE_LEFT + (availableWidth - totalContentWidth) / 2, SAFE_LEFT);
 
   const qrX = startX;
-  const qrY = (bgHeight - qrSizePx) / 2;
+  const qrY = clampQrY(qrSizePx, bgHeight);
+  const qrCenterY = qrY + qrSizePx / 2;
 
-  const textTopY = (bgHeight - (textHeight + 130)) / 2;
-  const text2TopY = (bgHeight - (textHeight - 40)) / 2;
-  const textX = startX + qrSizePx + spacing + 10;
-  const text2X = startX + qrSizePx + spacing + 60;
+  // "Mesa" queda arriba y el número abajo, superpuestos como una firma
+  // manuscrita: mismo ritmo vertical relativo que el diseño original.
+  const textTopY = qrCenterY - (textHeight + 130) / 2;
+  const text2TopY = qrCenterY - (textHeight - 40) / 2;
+  const textX = startX + qrSizePx + spacing + mesaOffset;
+  const text2X = startX + qrSizePx + spacing + numberOffset;
   const textBaselineY = textTopY + ascent;
   const text2BaselineY = text2TopY + ascent;
 
   const textMarkup =
-    `<text x="${textX}" y="${textBaselineY}" font-family="BreathingRegular, cursive" font-size="65" fill="#000000">Mesa</text>` +
-    `<text x="${text2X}" y="${text2BaselineY}" font-family="BreathingRegular, cursive" font-size="65" fill="#000000">${escapeXml(title)}</text>`;
+    `<text x="${textX}" y="${textBaselineY}" font-family="${TEXT_FONT_FAMILY}" font-size="${fontSize}" fill="#000000">Mesa</text>` +
+    `<text x="${text2X}" y="${text2BaselineY}" font-family="${TEXT_FONT_FAMILY}" font-size="${fontSize}" fill="#000000">${escapeXml(title)}</text>`;
   return { qrX, qrY, textMarkup };
 }
 
