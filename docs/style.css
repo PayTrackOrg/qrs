@@ -198,3 +198,18 @@ button:disabled {
   font-size: 12px;
   color: var(--muted);
 }
+
+.file-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 6px;
+  background: linear-gradient(135deg, var(--cyan), var(--purple));
+  color: #0b0d1a;
+  font-weight: 800;
+  font-size: 22px;
+  letter-spacing: 1px;
+  text-decoration: none;
+}

@@ -64,15 +64,14 @@ function getQrModules(link) {
   return QRCode.create(link, { errorCorrectionLevel: "H" }).modules;
 }
 
-function qrModulesToSvg(modules, originX, originY, fillColor = "#000000") {
+// Recorre los módulos oscuros y los agrupa en tramos horizontales contiguos.
+// Tanto el exportador a SVG como el exportador a PDF dibujan un solo
+// rectángulo por tramo en vez de uno por módulo: miles de objetos
+// individuales es lo que hace que Illustrator/Inkscape tarden en abrir o
+// seleccionar el archivo.
+function qrModuleRuns(modules) {
   const size = modules.size;
-  const totalModules = size + QR_MARGIN_MODULES * 2;
-  const sizePx = totalModules * QR_MODULE_SIZE;
-
-  let markup = `<rect x="${originX}" y="${originY}" width="${sizePx}" height="${sizePx}" fill="#ffffff"/>`;
-  // Los módulos oscuros contiguos de una fila se fusionan en un solo <rect>
-  // en vez de uno por módulo: miles de rects individuales son lo que hace que
-  // Illustrator/Inkscape tarden en abrir o seleccionar el archivo.
+  const runs = [];
   for (let row = 0; row < size; row++) {
     let col = 0;
     while (col < size) {
@@ -80,14 +79,25 @@ function qrModulesToSvg(modules, originX, originY, fillColor = "#000000") {
         col++;
         continue;
       }
-      const runStart = col;
+      const colStart = col;
       while (col < size && modules.get(row, col)) col++;
-      const runLength = col - runStart;
-      const x = originX + (QR_MARGIN_MODULES + runStart) * QR_MODULE_SIZE;
-      const y = originY + (QR_MARGIN_MODULES + row) * QR_MODULE_SIZE;
-      const width = runLength * QR_MODULE_SIZE;
-      markup += `<rect x="${x}" y="${y}" width="${width}" height="${QR_MODULE_SIZE}" fill="${fillColor}"/>`;
+      runs.push({ row, colStart, colEnd: col });
     }
+  }
+  return runs;
+}
+
+function qrModulesToSvg(modules, originX, originY, fillColor = "#000000") {
+  const size = modules.size;
+  const totalModules = size + QR_MARGIN_MODULES * 2;
+  const sizePx = totalModules * QR_MODULE_SIZE;
+
+  let markup = `<rect x="${originX}" y="${originY}" width="${sizePx}" height="${sizePx}" fill="#ffffff"/>`;
+  for (const { row, colStart, colEnd } of qrModuleRuns(modules)) {
+    const x = originX + (QR_MARGIN_MODULES + colStart) * QR_MODULE_SIZE;
+    const y = originY + (QR_MARGIN_MODULES + row) * QR_MODULE_SIZE;
+    const width = (colEnd - colStart) * QR_MODULE_SIZE;
+    markup += `<rect x="${x}" y="${y}" width="${width}" height="${QR_MODULE_SIZE}" fill="${fillColor}"/>`;
   }
   return { markup, sizePx };
 }
@@ -176,7 +186,19 @@ ${bodyMarkup}
 </svg>`;
 }
 
-async function buildPlainQrSvg(link, headerText = "PIDE TU CANCIÓN") {
+function textsToSvgMarkup(texts) {
+  return texts
+    .map(
+      (t) =>
+        `<text x="${t.x}" y="${t.y}" font-family="${t.fontFamily}" font-size="${t.fontSize}" fill="#000000">${escapeXml(t.content)}</text>`
+    )
+    .join("");
+}
+
+// Geometría del diseño "sin fondo" (encabezado + QR + marco de esquinas), sin
+// generar ningún marcado todavía. La reutilizan tanto el exportador a SVG
+// como el exportador a PDF, para no duplicar las cuentas de posición/tamaño.
+async function plainQrGeometry(link, headerText = "PIDE TU CANCIÓN") {
   const modules = getQrModules(link);
   const qrSizePx = (modules.size + QR_MARGIN_MODULES * 2) * QR_MODULE_SIZE;
 
@@ -200,24 +222,41 @@ async function buildPlainQrSvg(link, headerText = "PIDE TU CANCIÓN") {
   const qrX = (canvasWidth - qrSizePx) / 2;
   const qrY = headerTopY + headerHeight + 16 + framePadding;
 
-  const { markup: qrMarkup } = qrModulesToSvg(modules, qrX, qrY);
-  const frameMarkup = cornerFramesSvg(
-    qrX - framePadding,
-    qrY - framePadding,
-    qrX + qrSizePx + framePadding,
-    qrY + qrSizePx + framePadding
-  );
+  return {
+    modules,
+    qrSizePx,
+    canvasWidth,
+    canvasHeight,
+    qrX,
+    qrY,
+    header: { x: headerX, y: headerBaselineY, fontSize: 60, fontFamily: "Anton, Impact, 'Arial Black', sans-serif", content: header },
+    frame: {
+      left: qrX - framePadding,
+      top: qrY - framePadding,
+      right: qrX + qrSizePx + framePadding,
+      bottom: qrY + qrSizePx + framePadding,
+    },
+  };
+}
+
+async function buildPlainQrSvg(link, headerText = "PIDE TU CANCIÓN") {
+  const geo = await plainQrGeometry(link, headerText);
+  const { markup: qrMarkup } = qrModulesToSvg(geo.modules, geo.qrX, geo.qrY);
+  const frameMarkup = cornerFramesSvg(geo.frame.left, geo.frame.top, geo.frame.right, geo.frame.bottom);
+  const headerMarkup = textsToSvgMarkup([geo.header]);
 
   const fontFaceCss = `@font-face { font-family: "Anton"; src: url("${window.FONT_DATA.anton}") format("truetype"); }`;
-  const body = `  <rect x="0" y="0" width="${canvasWidth}" height="${canvasHeight}" fill="#ffffff"/>
-  <text x="${headerX}" y="${headerBaselineY}" font-family="Anton, Impact, 'Arial Black', sans-serif" font-size="60" fill="#000000">${escapeXml(header)}</text>
+  const body = `  <rect x="0" y="0" width="${geo.canvasWidth}" height="${geo.canvasHeight}" fill="#ffffff"/>
+  ${headerMarkup}
   ${qrMarkup}
   ${frameMarkup}`;
 
-  return svgDocument(canvasWidth, canvasHeight, fontFaceCss, body);
+  return svgDocument(geo.canvasWidth, geo.canvasHeight, fontFaceCss, body);
 }
 
-async function buildQrOnBackgroundSvg(link, title, layoutFn) {
+// Geometría del diseño "con fondo" (imagen de fondo + QR + textos). layoutFn
+// es generalTextLayout o mesaTextLayout.
+async function qrOnBackgroundGeometry(link, title, layoutFn) {
   const modules = getQrModules(link);
   const qrSizePx = (modules.size + QR_MARGIN_MODULES * 2) * QR_MODULE_SIZE;
 
@@ -226,18 +265,23 @@ async function buildQrOnBackgroundSvg(link, title, layoutFn) {
   const bgHeight = bgImg.naturalHeight;
 
   await ensureFontLoaded('65px "BreathingRegular"');
-  const font = '65px "BreathingRegular", cursive';
 
-  const { qrX, qrY, textMarkup } = layoutFn(font, qrSizePx, bgWidth, bgHeight, title);
+  const { qrX, qrY, texts } = layoutFn(qrSizePx, bgWidth, bgHeight, title);
 
-  const { markup: qrMarkup } = qrModulesToSvg(modules, qrX, qrY);
+  return { modules, qrSizePx, bgWidth, bgHeight, qrX, qrY, texts };
+}
+
+async function buildQrOnBackgroundSvg(link, title, layoutFn) {
+  const geo = await qrOnBackgroundGeometry(link, title, layoutFn);
+  const { markup: qrMarkup } = qrModulesToSvg(geo.modules, geo.qrX, geo.qrY);
+  const textMarkup = textsToSvgMarkup(geo.texts);
 
   const fontFaceCss = `@font-face { font-family: "BreathingRegular"; src: url("${window.FONT_DATA.breathing}") format("truetype"); }`;
-  const body = `  <image x="0" y="0" width="${bgWidth}" height="${bgHeight}" href="${window.BACKGROUND_IMAGE_DATA_URI}"/>
+  const body = `  <image x="0" y="0" width="${geo.bgWidth}" height="${geo.bgHeight}" href="${window.BACKGROUND_IMAGE_DATA_URI}"/>
   ${qrMarkup}
   ${textMarkup}`;
 
-  return svgDocument(bgWidth, bgHeight, fontFaceCss, body);
+  return svgDocument(geo.bgWidth, geo.bgHeight, fontFaceCss, body);
 }
 
 // Zona segura dentro de Background.png (1080x1080) que evita el título superior,
@@ -272,7 +316,7 @@ function clampQrY(qrSizePx, bgHeight) {
   return qrY;
 }
 
-function generalTextLayout(font, qrSizePx, bgWidth, bgHeight, title) {
+function generalTextLayout(qrSizePx, bgWidth, bgHeight, title) {
   const spacing = 30;
   const safeRight = bgWidth - SAFE_RIGHT_MARGIN;
   const availableWidth = safeRight - SAFE_LEFT;
@@ -297,11 +341,11 @@ function generalTextLayout(font, qrSizePx, bgWidth, bgHeight, title) {
   const textBaselineY = qrCenterY - textHeight / 2 + ascent;
   const textX = startX + qrSizePx + spacing;
 
-  const textMarkup = `<text x="${textX}" y="${textBaselineY}" font-family="${TEXT_FONT_FAMILY}" font-size="${fontSize}" fill="#000000">${escapeXml(title)}</text>`;
-  return { qrX, qrY, textMarkup };
+  const texts = [{ x: textX, y: textBaselineY, fontSize, fontFamily: TEXT_FONT_FAMILY, content: title }];
+  return { qrX, qrY, texts };
 }
 
-function mesaTextLayout(font, qrSizePx, bgWidth, bgHeight, title) {
+function mesaTextLayout(qrSizePx, bgWidth, bgHeight, title) {
   const spacing = 30;
   const mesaOffset = 10;
   const numberOffset = 60;
@@ -336,10 +380,11 @@ function mesaTextLayout(font, qrSizePx, bgWidth, bgHeight, title) {
   const textBaselineY = textTopY + ascent;
   const text2BaselineY = text2TopY + ascent;
 
-  const textMarkup =
-    `<text x="${textX}" y="${textBaselineY}" font-family="${TEXT_FONT_FAMILY}" font-size="${fontSize}" fill="#000000">Mesa</text>` +
-    `<text x="${text2X}" y="${text2BaselineY}" font-family="${TEXT_FONT_FAMILY}" font-size="${fontSize}" fill="#000000">${escapeXml(title)}</text>`;
-  return { qrX, qrY, textMarkup };
+  const texts = [
+    { x: textX, y: textBaselineY, fontSize, fontFamily: TEXT_FONT_FAMILY, content: "Mesa" },
+    { x: text2X, y: text2BaselineY, fontSize, fontFamily: TEXT_FONT_FAMILY, content: title },
+  ];
+  return { qrX, qrY, texts };
 }
 
 function generateQrWithLogoAndGeneralSvg(link, title) {
@@ -350,7 +395,48 @@ function generateQrWithLogoAndTextSvg(link, title) {
   return buildQrOnBackgroundSvg(link, title, mesaTextLayout);
 }
 
-async function generateAllQrCodes({ idDisco, nombre, mesas, estilo, onProgress }) {
+function svgToBlob(svgString) {
+  return new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
+}
+
+function extractSvgPixelSize(svgString) {
+  const match = svgString.match(/<svg[^>]*\swidth="(\d+(?:\.\d+)?)"[^>]*\sheight="(\d+(?:\.\d+)?)"/);
+  if (!match) throw new Error("No se pudo leer el tamaño del SVG generado.");
+  return { width: parseFloat(match[1]), height: parseFloat(match[2]) };
+}
+
+// Rasteriza el SVG a PNG a su resolución nativa dibujándolo en un canvas
+// oculto. Con cientos de mesas, subir la escala infla mucho el .zip final,
+// así que se deja en 1x (1080px para el diseño "con fondo").
+function svgToPngBlob(svgString, scale = 1) {
+  const { width, height } = extractSvgPixelSize(svgString);
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(width * scale);
+      canvas.height = Math.round(height * scale);
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob((blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error("No se pudo generar el PNG."));
+      }, "image/png");
+    };
+    img.onerror = () => reject(new Error("No se pudo generar el PNG a partir del SVG."));
+    img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svgString);
+  });
+}
+
+async function finalizeSvgOutput({ formato, svg, folder, baseName, label }) {
+  if (formato === "png") {
+    const blob = await svgToPngBlob(svg);
+    return { folder, fileName: `${baseName}.png`, label, blob, kind: "png" };
+  }
+  return { folder, fileName: `${baseName}.svg`, label, blob: svgToBlob(svg), kind: "svg" };
+}
+
+async function generateAllQrCodes({ idDisco, nombre, mesas, estilo, formato = "svg", onProgress }) {
   const results = [];
   const total = (mesas + 1) * (estilo === "ambos" ? 2 : 1);
   let done = 0;
@@ -369,24 +455,26 @@ async function generateAllQrCodes({ idDisco, nombre, mesas, estilo, onProgress }
       const svg = isGeneral
         ? await generateQrWithLogoAndGeneralSvg(link, title)
         : await generateQrWithLogoAndTextSvg(link, title);
-      results.push({
-        folder: "con-fondo",
-        fileName: isGeneral ? `${idDisco}-general.svg` : `${idDisco}-mesa-${i}.svg`,
-        label: isGeneral ? "General (con fondo)" : `Mesa ${i} (con fondo)`,
+      results.push(await finalizeSvgOutput({
+        formato,
         svg,
-      });
+        folder: "con-fondo",
+        baseName: isGeneral ? `${idDisco}-general` : `${idDisco}-mesa-${i}`,
+        label: isGeneral ? "General (con fondo)" : `Mesa ${i} (con fondo)`,
+      }));
       done++;
       if (onProgress) onProgress(done, total);
     }
 
     if (wantsSinFondo) {
       const svg = await buildPlainQrSvg(link);
-      results.push({
-        folder: "sin-fondo",
-        fileName: isGeneral ? `${idDisco}-general-sin-fondo.svg` : `${idDisco}-mesa-${i}-sin-fondo.svg`,
-        label: isGeneral ? "General (sin fondo)" : `Mesa ${i} (sin fondo)`,
+      results.push(await finalizeSvgOutput({
+        formato,
         svg,
-      });
+        folder: "sin-fondo",
+        baseName: isGeneral ? `${idDisco}-general-sin-fondo` : `${idDisco}-mesa-${i}-sin-fondo`,
+        label: isGeneral ? "General (sin fondo)" : `Mesa ${i} (sin fondo)`,
+      }));
       done++;
       if (onProgress) onProgress(done, total);
     }
@@ -399,4 +487,12 @@ window.QrBuilder = {
   BASE_URL,
   buildAccessLink,
   generateAllQrCodes,
+  getQrModules,
+  qrModuleRuns,
+  plainQrGeometry,
+  qrOnBackgroundGeometry,
+  generalTextLayout,
+  mesaTextLayout,
+  QR_MODULE_SIZE,
+  QR_MARGIN_MODULES,
 };

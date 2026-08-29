@@ -8,6 +8,10 @@ const statusEl = document.getElementById("status");
 const resultsSection = document.getElementById("results");
 const resultsGrid = document.getElementById("results-grid");
 const downloadZipBtn = document.getElementById("download-zip-btn");
+const pdfOptionsEl = document.getElementById("pdf-options");
+const pdfGridOptionsEl = document.getElementById("pdf-grid-options");
+const pdfSheetSizeSelect = document.getElementById("pdf-sheet-size");
+const pdfGridSelect = document.getElementById("pdf-grid");
 
 const DISCOTECAS_ENDPOINT = "https://getdiscotecas-mi7qt2fccq-uc.a.run.app";
 
@@ -35,12 +39,22 @@ function renderResults(results) {
   results.forEach((r) => {
     const card = document.createElement("div");
     card.className = "qr-card";
-    const img = document.createElement("img");
-    img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(r.svg);
-    img.alt = r.label;
+    if (r.kind === "pdf") {
+      const link = document.createElement("a");
+      link.className = "file-icon";
+      link.textContent = "PDF";
+      link.href = URL.createObjectURL(r.blob);
+      link.target = "_blank";
+      link.rel = "noopener";
+      card.appendChild(link);
+    } else {
+      const img = document.createElement("img");
+      img.src = URL.createObjectURL(r.blob);
+      img.alt = r.label;
+      card.appendChild(img);
+    }
     const caption = document.createElement("span");
     caption.textContent = r.label;
-    card.appendChild(img);
     card.appendChild(caption);
     resultsGrid.appendChild(card);
   });
@@ -57,7 +71,7 @@ async function downloadZip() {
   try {
     const zip = new JSZip();
     for (const r of lastResults) {
-      zip.folder(r.folder).file(r.fileName, r.svg);
+      zip.folder(r.folder).file(r.fileName, r.blob);
     }
     const zipBlob = await zip.generateAsync({ type: "blob" });
 
@@ -187,12 +201,51 @@ discoSearch.addEventListener("keydown", (e) => {
   options[activeOptionIndex].scrollIntoView({ block: "nearest" });
 });
 
+function populatePdfOptions() {
+  pdfSheetSizeSelect.innerHTML = "";
+  Object.values(PdfBuilder.PDF_SHEET_SIZES).forEach((sheet) => {
+    const option = document.createElement("option");
+    option.value = sheet.key;
+    option.textContent = sheet.label;
+    pdfSheetSizeSelect.appendChild(option);
+  });
+
+  pdfGridSelect.innerHTML = "";
+  PdfBuilder.PDF_GRID_PRESETS.forEach((grid) => {
+    const option = document.createElement("option");
+    option.value = grid.value;
+    option.textContent = grid.label;
+    pdfGridSelect.appendChild(option);
+  });
+}
+
+function updateFormatoVisibility() {
+  const formato = form.querySelector('input[name="formato"]:checked').value;
+  pdfOptionsEl.hidden = formato !== "pdf";
+  updatePdfModoVisibility();
+}
+
+function updatePdfModoVisibility() {
+  const pdfModo = form.querySelector('input[name="pdf-modo"]:checked').value;
+  pdfGridOptionsEl.hidden = pdfModo !== "cuadricula";
+}
+
+form.querySelectorAll('input[name="formato"]').forEach((input) => {
+  input.addEventListener("change", updateFormatoVisibility);
+});
+
+form.querySelectorAll('input[name="pdf-modo"]').forEach((input) => {
+  input.addEventListener("change", updatePdfModoVisibility);
+});
+
 async function handleSubmit(event) {
   event.preventDefault();
   clearResults();
 
   const mesas = parseInt(mesasInput.value, 10);
   const estilo = form.querySelector('input[name="estilo"]:checked').value;
+  const formato = form.querySelector('input[name="formato"]:checked').value;
+  const pdfModo = form.querySelector('input[name="pdf-modo"]:checked').value;
 
   if (!selectedDisco) {
     setStatus("Selecciona una discoteca de la lista.", true);
@@ -209,18 +262,40 @@ async function handleSubmit(event) {
   setStatus("Generando códigos QR...");
 
   try {
-    const results = await QrBuilder.generateAllQrCodes({
-      idDisco,
-      nombre,
-      mesas,
-      estilo,
-      onProgress: (done, total) => setStatus(`Generando códigos QR... (${done}/${total})`),
-    });
+    let results;
+    if (formato === "pdf" && pdfModo === "cuadricula") {
+      results = await PdfBuilder.generatePdfOutputs({
+        idDisco,
+        nombre,
+        mesas,
+        estilo,
+        sheetKey: pdfSheetSizeSelect.value,
+        gridKey: pdfGridSelect.value,
+        onProgress: (done, total) => setStatus(`Generando PDF... (${done}/${total})`),
+      });
+    } else if (formato === "pdf") {
+      results = await PdfBuilder.generateSimplePdfOutputs({
+        idDisco,
+        nombre,
+        mesas,
+        estilo,
+        onProgress: (done, total) => setStatus(`Generando PDF... (${done}/${total})`),
+      });
+    } else {
+      results = await QrBuilder.generateAllQrCodes({
+        idDisco,
+        nombre,
+        mesas,
+        estilo,
+        formato,
+        onProgress: (done, total) => setStatus(`Generando códigos QR... (${done}/${total})`),
+      });
+    }
 
     lastResults = results;
     lastIdDisco = idDisco;
     renderResults(results);
-    setStatus(`Listo: ${results.length} códigos QR generados para ${nombre}.`);
+    setStatus(`Listo: ${results.length} archivo(s) generados para ${nombre}.`);
   } catch (err) {
     console.error(err);
     setStatus(`Error generando los QR: ${err.message}`, true);
@@ -231,4 +306,6 @@ async function handleSubmit(event) {
 
 form.addEventListener("submit", handleSubmit);
 downloadZipBtn.addEventListener("click", downloadZip);
+populatePdfOptions();
+updateFormatoVisibility();
 loadDiscotecas();

@@ -60,6 +60,51 @@
           </div>
         </div>
 
+        <div class="field">
+          <span class="field-label">Formato de salida</span>
+          <div class="radio-group">
+            <label class="radio">
+              <input type="radio" name="formato" value="svg" checked />
+              SVG (editable)
+            </label>
+            <label class="radio">
+              <input type="radio" name="formato" value="png" />
+              PNG
+            </label>
+            <label class="radio">
+              <input type="radio" name="formato" value="pdf" />
+              PDF editable
+            </label>
+          </div>
+        </div>
+
+        <div class="field" id="pdf-options" hidden>
+          <div class="field">
+            <span class="field-label">Modo de PDF</span>
+            <div class="radio-group">
+              <label class="radio">
+                <input type="radio" name="pdf-modo" value="sencillo" checked />
+                Sencillo (1 QR por PDF)
+              </label>
+              <label class="radio">
+                <input type="radio" name="pdf-modo" value="cuadricula" />
+                Cuadrícula para litografía
+              </label>
+            </div>
+          </div>
+
+          <div class="field" id="pdf-grid-options" hidden>
+            <div class="field">
+              <label for="pdf-sheet-size">Tamaño de hoja</label>
+              <select id="pdf-sheet-size"></select>
+            </div>
+            <div class="field">
+              <label for="pdf-grid">QRs por página</label>
+              <select id="pdf-grid"></select>
+            </div>
+          </div>
+        </div>
+
         <button type="submit" id="generate-btn">Generar códigos QR</button>
       </form>
 
@@ -97,9 +142,13 @@
     <!-- Librería de generación de QR (equivalente a "qrcode" de Python), empaquetada localmente -->
     <script src="vendor/qrcode.min.js"></script>
 
+    <!-- Generación de PDF vectorial (para el formato "PDF editable"), empaquetada localmente -->
+    <script src="vendor/jspdf.umd.min.js"></script>
+
     <script src="assets/background-data.js"></script>
     <script src="assets/fonts-data.js"></script>
     <script src="qr-builder.js"></script>
+    <script src="pdf-builder.js"></script>
     <script src="main.js"></script>
   </body>
 </html>
