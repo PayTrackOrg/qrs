@@ -195,16 +195,20 @@ function textsToSvgMarkup(texts) {
     .join("");
 }
 
+const PLAIN_FONT_FAMILY = "Anton, Impact, 'Arial Black', sans-serif";
+
 // Geometría del diseño "sin fondo" (encabezado + QR + marco de esquinas), sin
 // generar ningún marcado todavía. La reutilizan tanto el exportador a SVG
 // como el exportador a PDF, para no duplicar las cuentas de posición/tamaño.
-async function plainQrGeometry(link, headerText = "PIDE TU CANCIÓN") {
+// mesaNumber es null para el QR general; para una mesa es su número, que se
+// dibuja apilado ("MESA" / número) a la izquierda del QR.
+async function plainQrGeometry(link, headerText = "PIDE TU CANCIÓN", mesaNumber = null) {
   const modules = getQrModules(link);
   const qrSizePx = (modules.size + QR_MARGIN_MODULES * 2) * QR_MODULE_SIZE;
 
   await ensureFontLoaded("60px Anton");
   const header = headerText.toUpperCase();
-  const headerFont = '60px Anton, Impact, "Arial Black", sans-serif';
+  const headerFont = `60px ${PLAIN_FONT_FAMILY}`;
   const metrics = measureText(header, headerFont);
   const headerWidth = metrics.width;
   const ascent = metrics.actualBoundingBoxAscent || 46;
@@ -212,15 +216,54 @@ async function plainQrGeometry(link, headerText = "PIDE TU CANCIÓN") {
   const headerHeight = ascent + descent;
 
   const framePadding = 6;
-  const canvasWidth = Math.round(Math.max(qrSizePx + framePadding * 2 + 120, headerWidth + 90));
+
+  const mesaSpacing = 24;
+  const mesaWordSize = 26;
+  const mesaNumberSize = 64;
+  let mesaBlockWidth = 0;
+  let mesaWordMetrics = null;
+  let mesaNumberMetrics = null;
+  const hasMesaLabel = mesaNumber !== null && mesaNumber !== undefined;
+  if (hasMesaLabel) {
+    mesaWordMetrics = measureText("MESA", `${mesaWordSize}px ${PLAIN_FONT_FAMILY}`);
+    mesaNumberMetrics = measureText(String(mesaNumber), `${mesaNumberSize}px ${PLAIN_FONT_FAMILY}`);
+    mesaBlockWidth = Math.max(mesaWordMetrics.width, mesaNumberMetrics.width);
+  }
+
+  const qrBlockWidth = qrSizePx + framePadding * 2;
+  const leftExtra = hasMesaLabel ? mesaBlockWidth + mesaSpacing : 0;
+  const contentWidth = qrBlockWidth + leftExtra;
+
+  const canvasWidth = Math.round(Math.max(contentWidth + 120, headerWidth + 90));
   const canvasHeight = Math.round(qrSizePx + framePadding * 2 + headerHeight + 66);
 
   const headerX = (canvasWidth - headerWidth) / 2;
   const headerTopY = 8;
   const headerBaselineY = headerTopY + ascent;
 
-  const qrX = (canvasWidth - qrSizePx) / 2;
+  const contentStartX = (canvasWidth - contentWidth) / 2;
+  const qrX = contentStartX + leftExtra + framePadding;
   const qrY = headerTopY + headerHeight + 16 + framePadding;
+
+  let mesaTexts = null;
+  if (hasMesaLabel) {
+    const qrCenterY = qrY + qrSizePx / 2;
+    const wordAscent = mesaWordMetrics.actualBoundingBoxAscent || mesaWordSize * 0.75;
+    const wordDescent = mesaWordMetrics.actualBoundingBoxDescent || mesaWordSize * 0.2;
+    const numberAscent = mesaNumberMetrics.actualBoundingBoxAscent || mesaNumberSize * 0.75;
+    const numberDescent = mesaNumberMetrics.actualBoundingBoxDescent || mesaNumberSize * 0.2;
+    const gapBetween = 6;
+    const blockHeight = wordAscent + wordDescent + gapBetween + numberAscent + numberDescent;
+    const blockTop = qrCenterY - blockHeight / 2;
+    const wordBaselineY = blockTop + wordAscent;
+    const numberBaselineY = blockTop + wordAscent + wordDescent + gapBetween + numberAscent;
+    const mesaCenterX = contentStartX + mesaBlockWidth / 2;
+
+    mesaTexts = [
+      { x: mesaCenterX - mesaWordMetrics.width / 2, y: wordBaselineY, fontSize: mesaWordSize, fontFamily: PLAIN_FONT_FAMILY, content: "MESA" },
+      { x: mesaCenterX - mesaNumberMetrics.width / 2, y: numberBaselineY, fontSize: mesaNumberSize, fontFamily: PLAIN_FONT_FAMILY, content: String(mesaNumber) },
+    ];
+  }
 
   return {
     modules,
@@ -229,7 +272,8 @@ async function plainQrGeometry(link, headerText = "PIDE TU CANCIÓN") {
     canvasHeight,
     qrX,
     qrY,
-    header: { x: headerX, y: headerBaselineY, fontSize: 60, fontFamily: "Anton, Impact, 'Arial Black', sans-serif", content: header },
+    header: { x: headerX, y: headerBaselineY, fontSize: 60, fontFamily: PLAIN_FONT_FAMILY, content: header },
+    mesaTexts,
     frame: {
       left: qrX - framePadding,
       top: qrY - framePadding,
@@ -239,15 +283,17 @@ async function plainQrGeometry(link, headerText = "PIDE TU CANCIÓN") {
   };
 }
 
-async function buildPlainQrSvg(link, headerText = "PIDE TU CANCIÓN") {
-  const geo = await plainQrGeometry(link, headerText);
+async function buildPlainQrSvg(link, headerText = "PIDE TU CANCIÓN", mesaNumber = null) {
+  const geo = await plainQrGeometry(link, headerText, mesaNumber);
   const { markup: qrMarkup } = qrModulesToSvg(geo.modules, geo.qrX, geo.qrY);
   const frameMarkup = cornerFramesSvg(geo.frame.left, geo.frame.top, geo.frame.right, geo.frame.bottom);
   const headerMarkup = textsToSvgMarkup([geo.header]);
+  const mesaMarkup = geo.mesaTexts ? textsToSvgMarkup(geo.mesaTexts) : "";
 
   const fontFaceCss = `@font-face { font-family: "Anton"; src: url("${window.FONT_DATA.anton}") format("truetype"); }`;
   const body = `  <rect x="0" y="0" width="${geo.canvasWidth}" height="${geo.canvasHeight}" fill="#ffffff"/>
   ${headerMarkup}
+  ${mesaMarkup}
   ${qrMarkup}
   ${frameMarkup}`;
 
@@ -467,7 +513,7 @@ async function generateAllQrCodes({ idDisco, nombre, mesas, estilo, formato = "s
     }
 
     if (wantsSinFondo) {
-      const svg = await buildPlainQrSvg(link);
+      const svg = await buildPlainQrSvg(link, "PIDE TU CANCIÓN", isGeneral ? null : i);
       results.push(await finalizeSvgOutput({
         formato,
         svg,

@@ -65,6 +65,9 @@ function drawSinFondoItemOnPdf(doc, geo, originXcm, originYcm, scale) {
   doc.rect(originXcm, originYcm, geo.canvasWidth * scale, geo.canvasHeight * scale, "F");
 
   drawTextsOnPdf(doc, [geo.header], "Anton", originXcm, originYcm, scale);
+  if (geo.mesaTexts) {
+    drawTextsOnPdf(doc, geo.mesaTexts, "Anton", originXcm, originYcm, scale);
+  }
   drawQrOnPdf(doc, geo.modules, geo.qrX, geo.qrY, geo.qrSizePx, originXcm, originYcm, scale);
 
   doc.setDrawColor(166, 102, 222);
@@ -131,7 +134,7 @@ async function buildStylePdf({ idDisco, nombre, mesas, style, sheet, cols, rows,
       const originY = cellY + (cellH - renderH) / 2;
       drawConFondoItemOnPdf(doc, geo, originX, originY, scale);
     } else {
-      const geo = await QrBuilder.plainQrGeometry(link);
+      const geo = await QrBuilder.plainQrGeometry(link, "PIDE TU CANCIÓN", isGeneral ? null : i);
       const scale = Math.min((cellW - 2 * CELL_MARGIN_CM) / geo.canvasWidth, (cellH - 2 * CELL_MARGIN_CM) / geo.canvasHeight);
       const renderW = geo.canvasWidth * scale;
       const renderH = geo.canvasHeight * scale;
@@ -192,7 +195,7 @@ async function buildSingleItemPdf(style, link, title, isGeneral) {
     return doc.output("blob");
   }
 
-  const geo = await QrBuilder.plainQrGeometry(link);
+  const geo = await QrBuilder.plainQrGeometry(link, "PIDE TU CANCIÓN", isGeneral ? null : title);
   const doc = new jsPDF({ unit: "cm", format: [geo.canvasWidth * CM_PER_PX, geo.canvasHeight * CM_PER_PX] });
   registerPdfFont(doc, window.FONT_DATA.anton, "Anton.ttf", "Anton");
   drawSinFondoItemOnPdf(doc, geo, 0, 0, CM_PER_PX);
