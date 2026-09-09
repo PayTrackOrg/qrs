@@ -43,16 +43,17 @@ function drawTextsOnPdf(doc, texts, fontName, originXcm, originYcm, scale) {
 }
 
 function drawQrOnPdf(doc, modules, qrX, qrY, qrSizePx, originXcm, originYcm, scale) {
-  const moduleSizeCm = QrBuilder.QR_MODULE_SIZE * scale;
+  const moduleSize = QrBuilder.qrModuleSizeFor(modules.size);
+  const moduleSizeCm = moduleSize * scale;
 
   doc.setFillColor(255, 255, 255);
   doc.rect(originXcm + qrX * scale, originYcm + qrY * scale, qrSizePx * scale, qrSizePx * scale, "F");
 
   doc.setFillColor(0, 0, 0);
   QrBuilder.qrModuleRuns(modules).forEach(({ row, colStart, colEnd }) => {
-    const xPx = qrX + (QrBuilder.QR_MARGIN_MODULES + colStart) * QrBuilder.QR_MODULE_SIZE;
-    const yPx = qrY + (QrBuilder.QR_MARGIN_MODULES + row) * QrBuilder.QR_MODULE_SIZE;
-    const widthPx = (colEnd - colStart) * QrBuilder.QR_MODULE_SIZE;
+    const xPx = qrX + (QrBuilder.QR_MARGIN_MODULES + colStart) * moduleSize;
+    const yPx = qrY + (QrBuilder.QR_MARGIN_MODULES + row) * moduleSize;
+    const widthPx = (colEnd - colStart) * moduleSize;
     doc.rect(originXcm + xPx * scale, originYcm + yPx * scale, widthPx * scale, moduleSizeCm, "F");
   });
 }

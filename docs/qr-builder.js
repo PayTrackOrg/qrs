@@ -5,8 +5,19 @@
 // igual que en cualquier archivo de diseño real.
 
 const BASE_URL = "https://users.paytrack.com.co/";
-const QR_MODULE_SIZE = 10;
 const QR_MARGIN_MODULES = 2;
+// Tamaño físico objetivo del QR (con margen incluido), constante sin importar
+// cuántos módulos tenga. Antes el tamaño de módulo era fijo (10px) y el QR
+// crecía en píxeles según el largo del idDisco/mesa codificado, lo que podía
+// hacerlo chocar contra la barra del reproductor en el diseño "con fondo".
+// Ahora el módulo se recalcula por QR para que el tamaño final siempre sea
+// este mismo valor.
+const QR_TARGET_SIZE_PX = 500;
+
+function qrModuleSizeFor(modulesSize) {
+  const totalModules = modulesSize + QR_MARGIN_MODULES * 2;
+  return QR_TARGET_SIZE_PX / totalModules;
+}
 
 function base64UrlEncode(str) {
   const bytes = new TextEncoder().encode(str);
@@ -60,8 +71,12 @@ function measureText(text, font) {
   return measureCtx.measureText(text);
 }
 
+// Nivel "M" (recuperación ~15%) en vez de "H" (~30%): con el mismo contenido
+// necesita menos versión/módulos, o sea un QR visualmente menos denso y más
+// fácil de escanear. No hay logo superpuesto sobre el QR que justifique el
+// nivel más alto.
 function getQrModules(link) {
-  return QRCode.create(link, { errorCorrectionLevel: "H" }).modules;
+  return QRCode.create(link, { errorCorrectionLevel: "M" }).modules;
 }
 
 // Recorre los módulos oscuros y los agrupa en tramos horizontales contiguos.
@@ -89,17 +104,18 @@ function qrModuleRuns(modules) {
 
 function qrModulesToSvg(modules, originX, originY, fillColor = "#000000") {
   const size = modules.size;
+  const moduleSize = qrModuleSizeFor(size);
   const totalModules = size + QR_MARGIN_MODULES * 2;
-  const sizePx = totalModules * QR_MODULE_SIZE;
+  const sizePx = totalModules * moduleSize;
 
   let markup = `<rect x="${originX}" y="${originY}" width="${sizePx}" height="${sizePx}" fill="#ffffff"/>`;
   for (const { row, colStart, colEnd } of qrModuleRuns(modules)) {
-    const x = originX + (QR_MARGIN_MODULES + colStart) * QR_MODULE_SIZE;
-    const y = originY + (QR_MARGIN_MODULES + row) * QR_MODULE_SIZE;
-    const width = (colEnd - colStart) * QR_MODULE_SIZE;
-    markup += `<rect x="${x}" y="${y}" width="${width}" height="${QR_MODULE_SIZE}" fill="${fillColor}"/>`;
+    const x = originX + (QR_MARGIN_MODULES + colStart) * moduleSize;
+    const y = originY + (QR_MARGIN_MODULES + row) * moduleSize;
+    const width = (colEnd - colStart) * moduleSize;
+    markup += `<rect x="${x}" y="${y}" width="${width}" height="${moduleSize}" fill="${fillColor}"/>`;
   }
-  return { markup, sizePx };
+  return { markup, sizePx, moduleSize };
 }
 
 function cornerFramesSvg(left, top, right, bottom) {
@@ -197,70 +213,69 @@ function textsToSvgMarkup(texts) {
 
 const PLAIN_FONT_FAMILY = "Anton, Impact, 'Arial Black', sans-serif";
 
+const PLAIN_HEADER_FONT_SIZE = 84;
+const PLAIN_MESA_NUMBER_FONT_SIZE = 96;
+
 // Geometría del diseño "sin fondo" (encabezado + QR + marco de esquinas), sin
 // generar ningún marcado todavía. La reutilizan tanto el exportador a SVG
 // como el exportador a PDF, para no duplicar las cuentas de posición/tamaño.
-// mesaNumber es null para el QR general; para una mesa es su número, que se
-// dibuja apilado ("MESA" / número) a la izquierda del QR.
+// mesaNumber es null para el QR general; para una mesa es solo su número
+// (sin la palabra "Mesa"), a la izquierda del QR.
 async function plainQrGeometry(link, headerText = "PIDE TU CANCIÓN", mesaNumber = null) {
   const modules = getQrModules(link);
-  const qrSizePx = (modules.size + QR_MARGIN_MODULES * 2) * QR_MODULE_SIZE;
+  const qrSizePx = (modules.size + QR_MARGIN_MODULES * 2) * qrModuleSizeFor(modules.size);
 
-  await ensureFontLoaded("60px Anton");
+  await ensureFontLoaded(`${PLAIN_HEADER_FONT_SIZE}px Anton`);
   const header = headerText.toUpperCase();
-  const headerFont = `60px ${PLAIN_FONT_FAMILY}`;
+  const headerFont = `${PLAIN_HEADER_FONT_SIZE}px ${PLAIN_FONT_FAMILY}`;
   const metrics = measureText(header, headerFont);
   const headerWidth = metrics.width;
-  const ascent = metrics.actualBoundingBoxAscent || 46;
-  const descent = metrics.actualBoundingBoxDescent || 14;
+  const ascent = metrics.actualBoundingBoxAscent || PLAIN_HEADER_FONT_SIZE * 0.77;
+  const descent = metrics.actualBoundingBoxDescent || PLAIN_HEADER_FONT_SIZE * 0.23;
   const headerHeight = ascent + descent;
 
   const framePadding = 6;
 
   const mesaSpacing = 24;
-  const mesaWordSize = 26;
-  const mesaNumberSize = 64;
-  let mesaBlockWidth = 0;
-  let mesaWordMetrics = null;
+  const mesaNumberSize = PLAIN_MESA_NUMBER_FONT_SIZE;
   let mesaNumberMetrics = null;
   const hasMesaLabel = mesaNumber !== null && mesaNumber !== undefined;
   if (hasMesaLabel) {
-    mesaWordMetrics = measureText("MESA", `${mesaWordSize}px ${PLAIN_FONT_FAMILY}`);
     mesaNumberMetrics = measureText(String(mesaNumber), `${mesaNumberSize}px ${PLAIN_FONT_FAMILY}`);
-    mesaBlockWidth = Math.max(mesaWordMetrics.width, mesaNumberMetrics.width);
   }
+  const mesaBlockWidth = hasMesaLabel ? mesaNumberMetrics.width : 0;
 
   const qrBlockWidth = qrSizePx + framePadding * 2;
   const leftExtra = hasMesaLabel ? mesaBlockWidth + mesaSpacing : 0;
   const contentWidth = qrBlockWidth + leftExtra;
 
-  const canvasWidth = Math.round(Math.max(contentWidth + 120, headerWidth + 90));
+  // El encabezado se centra sobre el QR (no sobre el número de mesa a su
+  // izquierda), así que el lienzo debe ser lo bastante ancho para que quepa
+  // centrado en torno al centro del QR sin recortarse. El centro del bloque
+  // de contenido queda desplazado leftExtra/2 a la derecha del centro del
+  // QR, así que se compensa restando ese desplazamiento del ancho requerido.
+  const canvasWidth = Math.round(Math.max(contentWidth + 120, headerWidth + leftExtra + 90));
   const canvasHeight = Math.round(qrSizePx + framePadding * 2 + headerHeight + 66);
 
-  const headerX = (canvasWidth - headerWidth) / 2;
   const headerTopY = 8;
   const headerBaselineY = headerTopY + ascent;
 
   const contentStartX = (canvasWidth - contentWidth) / 2;
   const qrX = contentStartX + leftExtra + framePadding;
   const qrY = headerTopY + headerHeight + 16 + framePadding;
+  const qrCenterX = qrX + qrSizePx / 2;
+
+  const headerX = qrCenterX - headerWidth / 2;
 
   let mesaTexts = null;
   if (hasMesaLabel) {
     const qrCenterY = qrY + qrSizePx / 2;
-    const wordAscent = mesaWordMetrics.actualBoundingBoxAscent || mesaWordSize * 0.75;
-    const wordDescent = mesaWordMetrics.actualBoundingBoxDescent || mesaWordSize * 0.2;
     const numberAscent = mesaNumberMetrics.actualBoundingBoxAscent || mesaNumberSize * 0.75;
     const numberDescent = mesaNumberMetrics.actualBoundingBoxDescent || mesaNumberSize * 0.2;
-    const gapBetween = 6;
-    const blockHeight = wordAscent + wordDescent + gapBetween + numberAscent + numberDescent;
-    const blockTop = qrCenterY - blockHeight / 2;
-    const wordBaselineY = blockTop + wordAscent;
-    const numberBaselineY = blockTop + wordAscent + wordDescent + gapBetween + numberAscent;
+    const numberBaselineY = qrCenterY - (numberAscent + numberDescent) / 2 + numberAscent;
     const mesaCenterX = contentStartX + mesaBlockWidth / 2;
 
     mesaTexts = [
-      { x: mesaCenterX - mesaWordMetrics.width / 2, y: wordBaselineY, fontSize: mesaWordSize, fontFamily: PLAIN_FONT_FAMILY, content: "MESA" },
       { x: mesaCenterX - mesaNumberMetrics.width / 2, y: numberBaselineY, fontSize: mesaNumberSize, fontFamily: PLAIN_FONT_FAMILY, content: String(mesaNumber) },
     ];
   }
@@ -272,7 +287,7 @@ async function plainQrGeometry(link, headerText = "PIDE TU CANCIÓN", mesaNumber
     canvasHeight,
     qrX,
     qrY,
-    header: { x: headerX, y: headerBaselineY, fontSize: 60, fontFamily: PLAIN_FONT_FAMILY, content: header },
+    header: { x: headerX, y: headerBaselineY, fontSize: PLAIN_HEADER_FONT_SIZE, fontFamily: PLAIN_FONT_FAMILY, content: header },
     mesaTexts,
     frame: {
       left: qrX - framePadding,
@@ -304,7 +319,7 @@ async function buildPlainQrSvg(link, headerText = "PIDE TU CANCIÓN", mesaNumber
 // es generalTextLayout o mesaTextLayout.
 async function qrOnBackgroundGeometry(link, title, layoutFn) {
   const modules = getQrModules(link);
-  const qrSizePx = (modules.size + QR_MARGIN_MODULES * 2) * QR_MODULE_SIZE;
+  const qrSizePx = (modules.size + QR_MARGIN_MODULES * 2) * qrModuleSizeFor(modules.size);
 
   const bgImg = await loadImage(window.BACKGROUND_IMAGE_DATA_URI);
   const bgWidth = bgImg.naturalWidth;
@@ -539,6 +554,6 @@ window.QrBuilder = {
   qrOnBackgroundGeometry,
   generalTextLayout,
   mesaTextLayout,
-  QR_MODULE_SIZE,
+  qrModuleSizeFor,
   QR_MARGIN_MODULES,
 };
